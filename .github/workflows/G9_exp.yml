@@ -1,23 +1,14 @@
-name: Build
+name: G9_exp
 
 on:
   push:
     branches:
-      - main
-  - pull_request
+      - Proton_G9
 
 jobs:
   build:
-    runs-on: ubuntu-20.04
+    runs-on: ubuntu-latest
     steps:
-      - name: Fix broken github setup
-        # https://github.com/actions/runner-images/issues/4589
-        run: >
-          sudo dpkg -l |
-          awk '/ii  lib.*deb.sury.org/ {gsub(/:.*/, s, $2); print $2}' |
-          xargs apt show -a |
-          awk '/Package:/ {p=$2} /APT-Sources: .*focal\/main/ {print p"/focal"}' |
-          sudo xargs eatmydata apt install --allow-downgrades
       - name: Setup multiarch
         run: |
           sudo dpkg --add-architecture i386
@@ -26,11 +17,11 @@ jobs:
         run: >
           sudo apt-get install -y
           gcc-multilib
+          libc6-dev:i386
           meson
           libwine
           libwine:i386
           libwine-dev
-          libwine-dev:i386
           libdrm-dev
           libdrm-dev:i386
           libx11-xcb-dev
@@ -47,6 +38,12 @@ jobs:
           libgl1-mesa-dev:i386
           libd3dadapter9-mesa-dev
           libd3dadapter9-mesa-dev:i386
+      - name: Install dependencies workaround
+        run: |
+          # libwine-dev and libwine-dev:i386 conflict with each other
+          # copy the native 64bit one to /tmp, which also avoids a winegcc multiarch bug
+          sudo cp -av /usr/lib/x86_64-linux-gnu/wine /tmp/wine64
+          sudo apt-get install -y libwine-dev:i386
       - name: Checkout
         uses: actions/checkout@v3
         with:
@@ -59,16 +56,11 @@ jobs:
             echo "RELEASE_TARBALL=/tmp/gallium-nine-standalone-${GITHUB_SHA:0:8}.tar.gz" >> $GITHUB_ENV
           fi
       - name: Compile
-        run: ./release.sh -o "${RELEASE_TARBALL}" -- -Ddri2=true -Ddistro-independent=true
-      - name: Upload artifact
-        uses: actions/upload-artifact@v3
-        with:
-          name: build
-          path: ${{ env.RELEASE_TARBALL }}
-      - name: Release
-        uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/')
-        with:
-          files: ${{ env.RELEASE_TARBALL }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WINE64_LIBDIR: /tmp/wine64
+          WINE32_LIBDIR: /usr/lib/i386-linux-gnu/wine
+        run: ./release.sh -o "${RELEASE_TARBALL}" -- -Ddri2=true -Ddistro-independent=true
+      - uses: actions/upload-artifact@v3
+        with:
+          name: test_out
+          path: ./
